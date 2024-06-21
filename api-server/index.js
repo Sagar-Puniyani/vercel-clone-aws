@@ -5,10 +5,30 @@ const {
     Credentialsconf,
     EcsClusterConf,
     AWSVPSconf,
+    Reddisconf
 } = require("./constants.js");
+const Redis = require('ioredis');
+const {Server} = require('socket.io');
+
+
+
 
 const app = express();
 const PORT = 9000;
+const io_PORT = 9001;
+
+const subscriber = new Redis(`${Reddisconf.RedisConnection}`);
+
+const io = new Server({cors : '*'});
+
+io.on('connection' , socket => {
+    socket.on('subscribe' , channel =>{
+        socket.join(channel);
+        socket.emit('message',`Joined ${channel}`);
+    })
+})
+
+io.listen(io_PORT, ()=>console.log(`Socket Server on ${io_PORT}`));
 
 const ecsClient = new ECSClient({
     region: "ap-south-1",
@@ -67,6 +87,16 @@ app.post("/project", async (req, res) => {
                 }
             })
 });
+
+async function initRedisSubscribe() {
+    console.log('Subscribed to logs....')
+    subscriber.psubscribe('logs:*')
+    subscriber.on('pmessage', (pattern, channel, message) => {
+        io.to(channel).emit('message', message)
+    })
+}
+
+initRedisSubscribe();
 
 app.listen(PORT, () => {
     console.log(`Reverse proxy Running ....${PORT}`);
